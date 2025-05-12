@@ -77,10 +77,18 @@ fn hash(password: &str, options: Option<HashOptions>) -> Result<String, Error> {
         None => Ok(Argon2::default()),
     }?;
 
-    argon2
+    let phc_string = argon2
         .hash_password(password.as_bytes(), &salt)
         .map(|password_hash| password_hash.to_string())
-        .map_err(|err| Error::Hash(err.to_string()))
+        .map_err(|err| Error::Hash(err.to_string()))?;
+
+    let mut buf = [0u8; 128];
+    let phc_bytes = phc_string.as_bytes();
+    let len = phc_bytes.len().min(128);
+    buf[..len].copy_from_slice(&phc_bytes[..len]);
+    let base64 = base64::encode(&buf);
+
+    Ok(base64)
 }
 
 // VERIFY
@@ -110,14 +118,23 @@ async fn verify_handler(mut req: Request) -> Result<String, Error> {
 }
 
 fn verify(options: &VerifyRequest) -> Result<bool, Error> {
-    let password_hash = PasswordHash::new(&options.hash)
+    let decoded =
+        base64::decode(&options.hash).map_err(|err| Error::InvalidPasswordHash(err.to_string()))?;
+
+    let phc_end = decoded
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(decoded.len());
+    let phc_str = std::str::from_utf8(&decoded[..phc_end])
         .map_err(|err| Error::InvalidPasswordHash(err.to_string()))?;
+
+    let password_hash =
+        PasswordHash::new(phc_str).map_err(|err| Error::InvalidPasswordHash(err.to_string()))?;
 
     let argon2 = Argon2::default();
 
     match argon2.verify_password(options.password.as_bytes(), &password_hash) {
         Ok(()) => Ok(true),
-
         Err(err) => match err {
             argon2::password_hash::Error::Password => Ok(false),
             _ => Err(Error::Verify(err.to_string())),

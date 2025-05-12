@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 argon2 = "0.5.2"
+base64 = "0.22"
 getrandom = { version = "0.2.11", features = ["js"] }
 rand_core = { version = "0.6.4", features = ["std"] }
 serde = { version = "1.0.192", features = ["derive"] }
